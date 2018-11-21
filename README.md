@@ -1,7 +1,8 @@
 Store
 =====
 
-[![Build Status](https://travis-ci.org/kvij/store?branch=master)](https://travis-ci.org/kvij/store)
+[![Build Status](https://travis-ci.org/kvij/store.svg?branch=master)](https://travis-ci.org/kvij/store)
+[![Coverage Status](https://coveralls.io/repos/github/kvij/store/badge.svg?branch=master)](https://coveralls.io/github/kvij/store?branch=master)
 
 Simple thread safe store and retrieve library for Go.
 
