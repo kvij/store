@@ -4,14 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-)
-
-const (
-	ADD Operation = iota
-	GET
-	UPDATE
-	DELETE
-	CLOSE
+	"sync"
 )
 
 type Store interface {
@@ -19,128 +12,67 @@ type Store interface {
 	Get(id string) (value interface{}, ok bool)      // Retrieve stored data by id
 	Update(id string, value interface{}) (err error) // Replace data stored at id
 	Delete(id string)                                // Remove id from store
-	Close() error                                    // Allow the Store to free resources
 }
 
 // Tread safe in memory Store implementation.
-// Must be created by store.New()
+// Must be created by store.New() or store.NewMapStore()
 type MapStore struct {
 	ledger map[string]interface{}
-	req    chan *Message
+	lock   *sync.Mutex
 }
 
-type Operation int
-
-// Internal message format for method <-> worker communication
-type Message struct {
-	operation Operation
-	id        string
-	value     interface{}
-	err       error
-	ok        bool
-	resp      chan *Message
+// New returns a new Store. Defaults to MapStore as internal type.
+func New() Store {
+	return NewMapStore()
 }
 
-// New returns a new MapStore pointer and starts an internal worker goroutine. Only the
-// worker may modify the fields to avoid race conditions.
-//
-// Close must be called to let the store go out of scope.
-func New() *MapStore {
-	ms := &MapStore{
+func NewMapStore() *MapStore {
+	return &MapStore{
 		ledger: make(map[string]interface{}),
-		req:    make(chan *Message),
+		lock:   &sync.Mutex{},
 	}
-
-	go func(ms *MapStore) {
-		for m := range ms.req {
-			switch m.operation {
-			case ADD:
-				var id string
-				for taken := true; taken; _, taken = ms.ledger[id] {
-					id = NewId()
-				}
-				ms.ledger[id] = m.value
-				m.id = id
-				break
-			case GET:
-				m.value, m.ok = ms.ledger[m.id]
-				break
-			case UPDATE:
-				if _, ok := ms.ledger[m.id]; !ok {
-					m.err = errors.New("Update failed no such id")
-				} else {
-					ms.ledger[m.id] = m.value
-				}
-				break
-			case DELETE:
-				delete(ms.ledger, m.id)
-			}
-
-			m.resp <- m
-		}
-	}(ms)
-
-	return ms
 }
 
 func (ms *MapStore) Add(value interface{}) (id string) {
-	resp := make(chan *Message)
-	m := &Message{
-		operation: ADD,
-		value:     value,
-		resp:      resp,
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	for taken := true; taken; _, taken = ms.ledger[id] {
+		id = NewId()
 	}
 
-	ms.req <- m
-	m = <-resp
+	ms.ledger[id] = value
 
-	return m.id
+	return
 }
 
 func (ms *MapStore) Get(id string) (value interface{}, ok bool) {
-	resp := make(chan *Message)
-	m := &Message{
-		operation: GET,
-		id:        id,
-		resp:      resp,
-	}
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
 
-	ms.req <- m
-	m = <-resp
-
-	return m.value, m.ok
+	value, ok = ms.ledger[id]
+	return
 }
 
+var errUpdateId = errors.New("Update failed no such id")
+
 func (ms *MapStore) Update(id string, value interface{}) (err error) {
-	resp := make(chan *Message)
-	m := &Message{
-		operation: UPDATE,
-		id:        id,
-		value:     value,
-		resp:      resp,
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	if _, ok := ms.ledger[id]; !ok {
+		return errUpdateId
 	}
 
-	ms.req <- m
-	m = <-resp
-
-	return m.err
+	ms.ledger[id] = value
+	return
 }
 
 func (ms *MapStore) Delete(id string) {
-	resp := make(chan *Message)
-	m := &Message{
-		operation: DELETE,
-		id:        id,
-		resp:      resp,
-	}
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
 
-	ms.req <- m
-	<-resp
-}
-
-func (ms *MapStore) Close() error {
-	close(ms.req)
-	return nil
+	delete(ms.ledger, id)
 }
 
 // Generates a random string with enough entrophy to avoid clashes

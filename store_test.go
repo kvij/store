@@ -6,32 +6,22 @@ import (
 	"testing"
 )
 
-func TestNewStore(t *testing.T) {
-	var iface interface{} = New()
-	if s, ok := iface.(Store); !ok {
-		t.Error("New() does not return a valid Store")
-	} else {
-		s.Close()
-	}
+func TestNew(t *testing.T) {
+	New()
+}
 
-	s := New()
-	value := 42
-	id := s.Add(value)
-	retrieved, ok := s.Get(id)
-	if !ok {
-		t.Error("Id not found")
-	}
-
-	if retrieved.(int) != value {
-		t.Errorf("Got = %v, want %v", retrieved, value)
+func TestNewMapStore(t *testing.T) {
+	var i interface{} = NewMapStore()
+	if _, ok := i.(Store); !ok {
+		t.Error("NewMapStore() does not return a valid Store")
 	}
 }
 
 func TestMapStore_Add(t *testing.T) {
-	s := New()
+	ms := NewMapStore()
 	wantValue := "Some value"
-	wantId := s.Add(wantValue)
-	for gotId, gotValue := range s.ledger {
+	wantId := ms.Add(wantValue)
+	for gotId, gotValue := range ms.ledger {
 		if gotId != wantId {
 			t.Errorf("MapStore.Add() = %v, want %v", gotId, wantId)
 		}
@@ -54,12 +44,11 @@ func TestMapStore_Get(t *testing.T) {
 	}{
 		{"Bool", args{"bool"}, true, true},
 		{"Int", args{"int"}, 42, true},
-		{"Constant", args{"constant"}, UPDATE, true},
+		{"Error", args{"error"}, errUpdateId, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ms := New()
-			defer ms.Close()
+			ms := NewMapStore()
 			ms.ledger[tt.args.id] = tt.wantValue
 			gotValue, gotOk := ms.Get(tt.args.id)
 			if !reflect.DeepEqual(gotValue, tt.wantValue) {
@@ -72,8 +61,7 @@ func TestMapStore_Get(t *testing.T) {
 	}
 
 	t.Run("Missing", func(t *testing.T) {
-		ms := New()
-		defer ms.Close()
+		ms := NewMapStore()
 		_, gotOk := ms.Get("DOES NOT EXIST")
 		if gotOk {
 			t.Errorf("MapStore.Get() gotOk = %v, want %v", gotOk, false)
@@ -82,39 +70,38 @@ func TestMapStore_Get(t *testing.T) {
 }
 
 func TestMapStore_Update(t *testing.T) {
-	s := New()
+	ms := NewMapStore()
 	id := "TESTID"
 	wrongId := "WRONGID"
-	s.ledger[id] = 15
+	ms.ledger[id] = 15
 	wantValue := 42
-	err := s.Update(wrongId, wantValue)
+	err := ms.Update(wrongId, wantValue)
 	if err == nil {
 		t.Errorf("MapStore.Update() err = %v, want %v", err, errors.New("Update failed no such id"))
 	}
 
-	err = s.Update(id, wantValue)
+	err = ms.Update(id, wantValue)
 	if err != nil {
 		t.Errorf("MapStore.Update() err = %v, want %v", err, nil)
 	}
 
-	if gotValue := s.ledger[id]; wantValue != gotValue {
+	if gotValue := ms.ledger[id]; wantValue != gotValue {
 		t.Errorf("MapStore.Update() gotValue = %v, want %v", gotValue, wantValue)
 	}
 }
 
 func TestMapStore_Delete(t *testing.T) {
 	id := "TESTID"
-	s := New()
-	s.ledger[id] = true
-	if _, ok := s.ledger[id]; !ok {
+	ms := NewMapStore()
+	ms.ledger[id] = true
+	if _, ok := ms.ledger[id]; !ok {
 		t.Errorf("MapStore.Delete() setup failed")
 	}
 
-	s.Delete(id)
-	if _, ok := s.ledger[id]; ok {
+	ms.Delete(id)
+	if _, ok := ms.ledger[id]; ok {
 		t.Errorf("MapStore.Delete() failed: %v still exists", id)
 	}
-
 }
 
 type ClashDetector map[string]bool
